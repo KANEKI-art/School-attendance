@@ -1,0 +1,2011 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Attendance & Admin Panel</title>
+  <!-- Google Font page ko block nahi karta (slow net par bhi app turant dikhta hai) -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet"></noscript>
+  <!-- Firebase Realtime Database aur jsPDF yahan <script src> se nahi, balki app start hone ke BAAD neeche script me load hote hain,
+       taaki internet slow/atka ho tab bhi page "Loading..." par na ruke. -->
+  <!-- Startup watchdog (purane ES5 syntax me, taaki main script na chale tab bhi kaam kare) -->
+  <script>
+    (function () {
+      window.__appStarted = false;
+      window.__startupErrors = [];
+      window.addEventListener('error', function (e) {
+        if (e && e.message) window.__startupErrors.push(String(e.message));
+      });
+      window.__showStartupProblem = function (detail) {
+        var box = document.getElementById('studentContainer');
+        if (!box) return;
+        while (box.firstChild) box.removeChild(box.firstChild);
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'text-align:center;padding:18px 12px;color:#192014;font-size:13px;font-weight:700;line-height:1.6;';
+        var title = document.createElement('div');
+        title.textContent = '⚠️ App start nahi ho paayi';
+        var info = document.createElement('div');
+        info.style.cssText = 'font-size:11px;font-weight:600;color:#6A7A5E;margin:6px 0 12px;word-break:break-word;';
+        info.textContent = detail || (window.__startupErrors[0]
+          ? 'Error: ' + window.__startupErrors[0]
+          : 'Page poora load nahi hua (file adhoori ya browser purana ho sakta hai).');
+        var btn = document.createElement('button');
+        btn.textContent = '🔄 Reload';
+        btn.style.cssText = 'background:#192014;color:#7DDC31;border:none;border-radius:12px;padding:10px 18px;font-weight:700;font-size:13px;cursor:pointer;';
+        btn.onclick = function () { location.reload(); };
+        wrap.appendChild(title); wrap.appendChild(info); wrap.appendChild(btn);
+        box.appendChild(wrap);
+      };
+      setTimeout(function () { if (!window.__appStarted) window.__showStartupProblem(); }, 4000);
+    })();
+  </script>
+
+  <style>
+    :root {
+      --bg-color: #C0E885;
+      --card-bg: #F4FAC8;
+      --item-bg: #FFFFFF;
+      --dark-color: #192014;
+      --sub-text: #6A7A5E;
+      --present-color: #4CAF50;
+      --leave-color: #FFB300;
+      --absent-color: #FF5252;
+      --bunk-color: #9C27B0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background-color: var(--bg-color);
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 20px 10px;
+    }
+
+    .app-frame {
+      width: 100%;
+      max-width: 420px;
+      background-color: var(--card-bg);
+      border-radius: 28px;
+      padding: 20px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.08);
+      margin: auto;
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .title-pill {
+      background: var(--dark-color);
+      color: #7DDC31;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    /* Firebase sync status dot: amber = connect ho raha, green = connected, red = offline */
+    .title-pill { cursor: pointer; user-select: none; }
+    .sync-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-left: 8px;
+      vertical-align: middle;
+      background: #FFB300;
+    }
+    .sync-dot[data-state="online"] { background: #7DDC31; }
+    .sync-dot[data-state="offline"] { background: #FF5252; }
+
+    .btn-admin-toggle {
+      background: #E2F0B3;
+      border: 1px solid rgba(0,0,0,0.05);
+      color: var(--dark-color);
+      padding: 8px 14px;
+      border-radius: 16px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-admin-toggle:active {
+      transform: scale(0.96);
+    }
+
+    .search-box {
+      margin-bottom: 12px;
+    }
+
+    .search-box input {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 16px;
+      border: 1px solid #D3E5AA;
+      background: var(--item-bg);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--dark-color);
+      outline: none;
+      transition: border 0.2s;
+    }
+
+    .search-box input:focus {
+      border-color: var(--dark-color);
+    }
+
+    .quick-select-bar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .btn-quick {
+      flex: 1;
+      padding: 8px 4px;
+      border-radius: 12px;
+      border: 1px solid #D3E5AA;
+      background: var(--item-bg);
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--dark-color);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-quick:active {
+      transform: scale(0.96);
+      background: #E2F0B3;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+
+    .dash-card {
+      background: var(--item-bg);
+      padding: 10px;
+      border-radius: 16px;
+      text-align: center;
+    }
+
+    .dash-card .num {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--dark-color);
+    }
+
+    .dash-card .label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--sub-text);
+    }
+
+    .admin-box {
+      display: none;
+      background: var(--item-bg);
+      border-radius: 20px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+    }
+
+    .admin-box h4 {
+      font-size: 14px;
+      color: var(--dark-color);
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .input-group label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--sub-text);
+    }
+
+    .input-group input, .input-group select {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid #E2E8D5;
+      outline: none;
+      font-size: 13px;
+      font-weight: 600;
+      background: #F9FCF3;
+    }
+
+    .btn-action {
+      background: var(--dark-color);
+      color: #7DDC31;
+      border: none;
+      padding: 10px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .btn-view-old {
+      width: 100%;
+      background: #37474F;
+      color: #fff;
+      border: none;
+      padding: 11px;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 12px;
+      cursor: pointer;
+      margin-top: 10px;
+      transition: background 0.2s;
+    }
+
+    .btn-view-old:hover {
+      background: #263238;
+    }
+
+    .btn-logout {
+      background: #FF5252;
+      color: white;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .student-list {
+      max-height: 400px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .student-list::-webkit-scrollbar {
+      width: 4px;
+    }
+    .student-list::-webkit-scrollbar-thumb {
+      background: #D3E5AA;
+      border-radius: 10px;
+    }
+
+    .student-card {
+      background: var(--item-bg);
+      border-radius: 18px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+    }
+
+    .student-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .name-details h3 {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--dark-color);
+    }
+
+    .meta-tags {
+      display: flex;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .tag {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--sub-text);
+      background: #F0F6E8;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 4px;
+    }
+
+    .action-btn {
+      border: none;
+      cursor: pointer;
+      font-size: 11px;
+      padding: 4px 8px;
+      font-weight: 700;
+      border-radius: 8px;
+      background: #F0F6E8;
+      color: var(--dark-color);
+    }
+
+    .status-group {
+      display: flex;
+      gap: 4px;
+      background: #F4FAC8;
+      padding: 3px;
+      border-radius: 12px;
+    }
+
+    .status-group label {
+      flex: 1;
+    }
+
+    .status-group input[type="radio"] {
+      display: none;
+    }
+
+    .status-btn {
+      display: block;
+      text-align: center;
+      padding: 6px 0;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--dark-color);
+      border-radius: 9px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s ease;
+    }
+
+    input[value="Present"]:checked + .status-btn {
+      background: var(--dark-color);
+      color: #7DDC31;
+    }
+
+    input[value="Leave"]:checked + .status-btn {
+      background: var(--dark-color);
+      color: #FFC107;
+    }
+
+    input[value="Absent"]:checked + .status-btn {
+      background: var(--dark-color);
+      color: #FF5252;
+    }
+
+    .bunk-toggle-wrap {
+      margin-top: 6px;
+    }
+
+    .bunk-toggle-wrap input[type="checkbox"] {
+      display: none;
+    }
+
+    .bunk-btn {
+      display: block;
+      text-align: center;
+      padding: 6px 0;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--sub-text);
+      background: #F0F6E8;
+      border-radius: 9px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s ease;
+    }
+
+    .bunk-toggle-wrap input[type="checkbox"]:checked + .bunk-btn {
+      background: var(--bunk-color);
+      color: #ffffff;
+    }
+
+    .btn-copy {
+      width: 100%;
+      padding: 14px;
+      background: var(--dark-color);
+      color: #ffffff;
+      border: none;
+      border-radius: 16px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      margin-top: 14px;
+      transition: transform 0.1s ease;
+    }
+
+    .btn-copy:active {
+      transform: scale(0.98);
+    }
+
+    .btn-pdf {
+      background: #1a3a3a;
+      color: #b3ffb3;
+      border: none;
+      border-radius: 16px;
+      font-weight: 800;
+      font-size: 13px;
+      padding: 14px;
+      width: 100%;
+      margin-top: 10px;
+      cursor: pointer;
+      transition: 0.1s ease;
+    }
+    .btn-pdf:active { transform: scale(0.98); }
+
+    .footer-credit {
+      text-align: center;
+      margin-top: 14px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--sub-text);
+    }
+
+    .footer-credit span {
+      color: var(--dark-color);
+      font-weight: 800;
+    }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .modal-box {
+      display: block;
+      width: 100%;
+      max-width: 380px;
+      max-height: 85vh;
+      overflow-y: auto;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--dark-color);
+      color: #7DDC31;
+      padding: 10px 20px;
+      border-radius: 30px;
+      font-size: 12px;
+      font-weight: 800;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 1001;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-frame">
+    <!-- Header -->
+    <div class="top-bar">
+      <div class="title-pill" onclick="showSyncStatus()" title="Sync status">ATTENDANCE<span class="sync-dot" id="syncDot" data-state="connecting"></span></div>
+      <button class="btn-admin-toggle" id="adminToggleBtn" onclick="toggleAdminPanel()">🔒 Admin Login</button>
+    </div>
+
+    <!-- Admin Login -->
+    <div id="loginForm" class="admin-box">
+      <h4>🔐 Admin Login</h4>
+      <div class="input-group">
+        <input type="text" id="adminId" placeholder="Admin ID">
+        <input type="password" id="adminPass" placeholder="Password">
+        <button class="btn-action" onclick="handleLogin()">Login</button>
+      </div>
+    </div>
+
+    <!-- Admin Manage Panel -->
+    <div id="managePanel" class="admin-box">
+      <h4>
+        <span>⚙️ Admin Controls</span>
+        <button class="btn-logout" onclick="handleLogout()">Logout</button>
+      </h4>
+      <div class="input-group">
+        <input type="text" id="newRoll" placeholder="Roll No. (e.g. 52)">
+        <input type="text" id="newId" placeholder="Student ID">
+        <input type="text" id="newName" placeholder="Full Name">
+        <button class="btn-action" onclick="addNewStudent()">Add Student</button>
+      </div>
+      <button class="btn-view-old" onclick="openOldAttendanceModal()">📅 View & Copy Old Attendance Logs</button>
+    </div>
+
+    <!-- Search Box -->
+    <div class="search-box">
+      <input type="text" id="searchInput" oninput="filterStudents()" placeholder="🔍 Search name or roll number...">
+    </div>
+
+    <!-- Auto Select Buttons -->
+    <div class="quick-select-bar">
+      <button class="btn-quick" onclick="markAllStatus('Present')">✅ All Present</button>
+      <button class="btn-quick" onclick="markAllStatus('Leave')">⚠️ All Leave</button>
+      <button class="btn-quick" onclick="markAllStatus('Absent')">❌ All Absent</button>
+    </div>
+
+    <!-- Counters -->
+    <div class="dashboard-grid">
+      <div class="dash-card">
+        <div class="num" id="count-present">0</div>
+        <div class="label">Present</div>
+      </div>
+      <div class="dash-card">
+        <div class="num" id="count-leave">0</div>
+        <div class="label">Leave</div>
+      </div>
+      <div class="dash-card">
+        <div class="num" id="count-absent">0</div>
+        <div class="label">Absent</div>
+      </div>
+      <div class="dash-card">
+        <div class="num" id="count-bunk" style="color:#9C27B0;">0</div>
+        <div class="label">Bunk 🏃</div>
+      </div>
+    </div>
+
+    <!-- Student List -->
+    <div class="student-list" id="studentContainer">
+      <p style="text-align: center; color: var(--sub-text); font-size: 13px; font-weight: 700; padding: 20px;">
+        Loading XI-D student list...
+      </p>
+    </div>
+
+    <!-- PDF GENERATE & SHARE BUTTON -->
+    <button class="btn-pdf" onclick="generatePDF()">📄 Make PDF & Share</button>
+    <button class="btn-copy" onclick="copyAttendance()" style="margin-top: 6px;">✦ Copy Attendance Text</button>
+
+    <!-- Footer Credit -->
+    <div class="footer-credit">
+      Made with ❤️ by <span>Shoebu</span>
+    </div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div id="editModal" class="modal-overlay" onclick="handleOverlayClick(event, 'editModal')">
+    <div class="admin-box modal-box">
+      <h4>✏️ Edit Student Details</h4>
+      <input type="hidden" id="editIndex">
+      <div class="input-group">
+        <label>Roll Number:</label>
+        <input type="text" id="editRoll">
+        <label>Student ID:</label>
+        <input type="text" id="editId">
+        <label>Full Name:</label>
+        <input type="text" id="editName">
+        <div style="display: flex; gap: 8px; margin-top: 6px;">
+          <button class="btn-action" style="flex: 1;" onclick="saveEditedStudent()">Save Changes</button>
+          <button class="btn-action" style="flex: 1; background: #E2E8D5; color: #192014;" onclick="closeModal('editModal')">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Student History Modal -->
+  <div id="historyModal" class="modal-overlay" onclick="handleOverlayClick(event, 'historyModal')">
+    <div class="admin-box modal-box">
+      <h4 id="historyStudentTitle">📜 Student Attendance History</h4>
+      <div id="historyLogs" style="margin-top: 10px; font-size: 12px; line-height: 1.6; color: var(--dark-color);">
+        Loading history...
+      </div>
+      <button class="btn-action" style="width: 100%; margin-top: 12px;" onclick="closeModal('historyModal')">Close</button>
+    </div>
+  </div>
+
+  <!-- Old Overall Attendance Modal -->
+  <div id="oldAttendanceModal" class="modal-overlay" onclick="handleOverlayClick(event, 'oldAttendanceModal')">
+    <div class="admin-box modal-box">
+      <h4>📅 Past Attendance Logs</h4>
+      <div class="input-group" style="margin-bottom: 10px;">
+        <label>Select Date:</label>
+        <select id="oldDateSelect" onchange="renderPastAttendanceReport()">
+          <option value="">-- Choose Date --</option>
+        </select>
+      </div>
+      <div id="pastReportContainer" style="margin-top: 10px; font-size: 12px; max-height: 220px; overflow-y: auto; background: #F9FCF3; padding: 10px; border-radius: 12px; border: 1px solid #E2E8D5;">
+        <p style="color: var(--sub-text); text-align: center;">Kripya koi date select karein.</p>
+      </div>
+      <p id="bunkEditHint" style="display:none; font-size: 10px; color: var(--sub-text); margin-top: 6px;">Sirf Present students ke liye Bunk (last period tak) tick karke neeche Update dabao.</p>
+      <button class="btn-action" id="btnSaveBunk" style="width: 100%; margin-top: 8px; background: #9C27B0; color: #fff; display: none;" onclick="saveBunkUpdates()">🏃 Update Bunk (Last Period Tak)</button>
+      <button class="btn-pdf" id="btnPdfOld" style="margin-top: 10px; display: none;" onclick="generatePastPDF()">📄 Make PDF (This Date)</button>
+      <button class="btn-copy" id="btnCopyOld" style="margin-top: 10px; display: none;" onclick="copyPastAttendance()">✦ Copy This Date's Report</button>
+      <button class="btn-action" style="width: 100%; margin-top: 8px; background: #E2E8D5; color: #192014;" onclick="closeModal('oldAttendanceModal')">Close</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast">Copied to Clipboard!</div>
+
+  <script>
+    // ===================== CONFIG =====================
+    const CLASS_NAME = 'XI-D';
+    const CREDIT_NAME = 'Shoebu';
+    const FIREBASE_DATA_PATH = 'XI_D_Attendance';
+    const STUDENTS_STORAGE_KEY = 'shoebu_xid_students_v1';
+    const LOGS_STORAGE_KEY = 'shoebu_xid_attendance_logs_v1';
+    const ROLL_PATTERN = /^[A-Za-z0-9_-]{1,10}$/;
+    const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    // XI-D students: PDF serial no. 146-201 (roll no. 1-56)
+    const defaultStudents = [
+      { roll: '01', id: '20140295005', name: "MOHD ZEESHAN SIDDIQUI" },
+      { roll: '02', id: '20150393432', name: "MOHD TARIQ" },
+      { roll: '03', id: '20160349517', name: "ABDUL REHMAN" },
+      { roll: '04', id: '20160440343', name: "MOHD SHOEB" },
+      { roll: '05', id: '20160440350', name: "SHAFFAN KHAN" },
+      { roll: '06', id: '20160440352', name: "NAJEEB AHMAD" },
+      { roll: '07', id: '20160440518', name: "MOHD FAZIL" },
+      { roll: '08', id: '20160440566', name: "TARVEZ KHAN" },
+      { roll: '09', id: '20160440575', name: "ARIF ANSARI" },
+      { roll: '10', id: '20160440602', name: "FAISAL ALI" },
+      { roll: '11', id: '20160440603', name: "ZIAUR REHMAN" },
+      { roll: '12', id: '20170429702', name: "MOHAMMAD ARSHALAN" },
+      { roll: '13', id: '20180475177', name: "AASHIK KHAN" },
+      { roll: '14', id: '20180475579', name: "MOHIT KUMAR" },
+      { roll: '15', id: '20180475582', name: "LAKSHYA" },
+      { roll: '16', id: '20190095511', name: "ANSH" },
+      { roll: '17', id: '20190161890', name: "ZAINUL ABEDIN" },
+      { roll: '18', id: '20190518453', name: "IBRAHIM FAISAL" },
+      { roll: '19', id: '20190518542', name: "JANISAR KHAN" },
+      { roll: '20', id: '20200074577', name: "MOHD AMAAN KHAN" },
+      { roll: '21', id: '20200079026', name: "MOHD AYAN ANSARI" },
+      { roll: '22', id: '20200079030', name: "MOHAMMAD ZAYED HUSAIN" },
+      { roll: '23', id: '20200082445', name: "BILAL" },
+      { roll: '24', id: '20200090104', name: "SYED SAIF HUSSAIN" },
+      { roll: '25', id: '20200090187', name: "MOHD RIHAN" },
+      { roll: '26', id: '20200136491', name: "SAAD AHMAD" },
+      { roll: '27', id: '20200140699', name: "AAHIL AHMED" },
+      { roll: '28', id: '20200294473', name: "UZAIF AKHTAR" },
+      { roll: '29', id: '20200334144', name: "MOHAMMAD AZAIN SAIFI" },
+      { roll: '30', id: '20200357557', name: "MOHAMMAD ABUZAR KHAN" },
+      { roll: '31', id: '20210151775', name: "MOHD SAMIULLAH" },
+      { roll: '32', id: '20210324456', name: "MOHD SHADAB" },
+      { roll: '33', id: '20210336441', name: "MD EHSAN" },
+      { roll: '34', id: '20210343412', name: "MOHAMMAD FAIZAN KHAN" },
+      { roll: '35', id: '20210379229', name: "TAYYAB MOHAMMED ATIF KHAN" },
+      { roll: '36', id: '20210497612', name: "ZAID KHAN" },
+      { roll: '37', id: '20210512891', name: "HARIS" },
+      { roll: '38', id: '20220391982', name: "PAWAN KUMAR SINGH" },
+      { roll: '39', id: '20220392039', name: "NOORE ILAHI" },
+      { roll: '40', id: '20220500885', name: "SHOAIB KHAN" },
+      { roll: '41', id: '20220501283', name: "VIKASH KUMAR KAMAT" },
+      { roll: '42', id: '20220508310', name: "AKSHAT KUMAR" },
+      { roll: '43', id: '20220508364', name: "AMAN KUMAR KAMAT" },
+      { roll: '44', id: '20220508509', name: "SHERAJ ASHRAF" },
+      { roll: '45', id: '20220537186', name: "SHAYAN" },
+      { roll: '46', id: '20230128923', name: "ABDULLAH" },
+      { roll: '47', id: '20230276765', name: "IBRAHIM WASIM" },
+      { roll: '48', id: '20230345191', name: "MOHAMMAD DANISH IDREESI" },
+      { roll: '49', id: '20230370769', name: "ADNAN KHAN" },
+      { roll: '50', id: '20230404697', name: "AATIF" },
+      { roll: '51', id: '20240277129', name: "ATIF IRSHAD" },
+      { roll: '52', id: '20240341941', name: "MOHD RIHAN" },
+      { roll: '53', id: '20240348627', name: "RIMAZ" },
+      { roll: '54', id: '20260303279', name: "MOHAMMAD SHAHID" },
+      { roll: '55', id: '20260303286', name: "MD SAIYAD" },
+      { roll: '56', id: '20260303313', name: "SHUMAIL ALI WARSI" }
+    ];
+
+    // Firebase Realtime Database (XI-D ke liye alag clean node).
+    const firebaseConfig = {
+      databaseURL: "https://vvvvv-425bc-default-rtdb.firebaseio.com/"
+    };
+
+    // ===================== SMALL HELPERS =====================
+    function esc(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, ch => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+      ));
+    }
+    function cssEsc(value) { return String(value).replace(/["\\]/g, '\\$&'); }
+    function compareRoll(a, b) { return String(a).localeCompare(String(b), undefined, { numeric: true }); }
+    function sortedRolls(day) { return Object.keys(day || {}).sort(compareRoll); }
+    function normRollKey(roll) { return String(roll).trim().toLowerCase().replace(/^0+(?=\d)/, ''); }
+    function normStatus(status) { return (status === 'Leave' || status === 'Absent') ? status : 'Present'; }
+
+    function getLocalDateString() {
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    function parseDateKey(key) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key || '');
+      return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
+    }
+    function fmtDate(d) {
+      return `${String(d.getDate()).padStart(2, '0')} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+    }
+    function fmtTime(d) {
+      const h = d.getHours();
+      return `${String(h % 12 || 12).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+    }
+
+    // Firebase kabhi kabhi objects ko arrays bana deta hai (ya null holes chhod deta hai) - isliye normalize.
+    function normalizeStudents(raw) {
+      const list = Array.isArray(raw) ? raw : Object.values(raw && typeof raw === 'object' ? raw : {});
+      return list
+        .filter(s => s && typeof s === 'object' && s.roll != null && String(s.roll) !== '' && s.name)
+        .map(s => ({ roll: String(s.roll), id: s.id ? String(s.id) : 'N/A', name: String(s.name) }));
+    }
+    function normalizeLogs(raw) {
+      const out = {};
+      if (!raw || typeof raw !== 'object') return out;
+      Object.keys(raw).forEach(date => {
+        const day = raw[date];
+        if (!day || typeof day !== 'object') return;
+        const entries = {};
+        Object.keys(day).forEach(roll => {
+          if (day[roll] && typeof day[roll] === 'object') entries[roll] = day[roll];
+        });
+        out[date] = entries;
+      });
+      return out;
+    }
+    function loadJSON(key) {
+      try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
+    }
+
+    // ===================== STATE =====================
+    let students = (() => {
+      const saved = normalizeStudents(loadJSON(STUDENTS_STORAGE_KEY));
+      return saved.length ? saved : normalizeStudents(defaultStudents);
+    })();
+    let allLogs = normalizeLogs(loadJSON(LOGS_STORAGE_KEY));
+    let isAdmin = false;
+    let selectedPastDate = '';
+    let autoSaveTimer = null;
+    let activeDateKey = getLocalDateString();
+    let renderedStudentsSig = '';
+    const dirtyRolls = new Set();   // jin students ko is device par abhi badla gaya (save pending)
+
+    // Jo changes Firebase tak confirm hokar nahi pahunche (net slow/offline), unhe localStorage me bachake rakhte hain
+    // taaki page band/reload hone ke baad bhi agli baar sync ho jayein (warna purana remote data unhe overwrite kar deta).
+    const PENDING_STORAGE_KEY = 'shoebu_xid_pending_v1';
+    let pendingWrites = (() => {
+      const saved = loadJSON(PENDING_STORAGE_KEY);
+      return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+    })();
+    let needReplay = true;          // pehla snapshot aate hi bache hue (unsynced) changes dobara lagane hain
+    function persistPending() {
+      try { localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(pendingWrites)); } catch (e) { /* ignore */ }
+    }
+
+    let firebaseDb = null;
+    let firebaseSynced = false;     // pehla snapshot aa chuka hai
+    let firebaseAnnounced = false;
+    let firebaseStarting = false;   // SDK load / connect chal raha hai
+    let firebaseGaveUp = false;     // SDK load nahi ho paya (offline mode) - net aane par dobara koshish hogi
+    let fillPending = false;
+    let syncState = 'connecting';   // connecting | online | offline
+    let everOnline = false;
+
+    function persistLocal() {
+      try {
+        localStorage.setItem(STUDENTS_STORAGE_KEY, JSON.stringify(students));
+        localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify(allLogs));
+      } catch (e) { console.warn('Local save failed:', e); }
+    }
+
+    // Sirf badla hua hissa Firebase me likhte hain (multi-path update) - isse do devices ek doosre ka data overwrite nahi karte.
+    function sendRemote(updates) {
+      if (!firebaseDb) return;
+      const keys = Object.keys(updates);
+      if (!keys.length) return;
+      const sentSig = {};
+      keys.forEach(k => { sentSig[k] = JSON.stringify(updates[k]); });
+      const fail = (error) => {
+        console.error('Firebase save failed:', error);
+        showToast(firebaseErrorMessage(error, 'save'));
+      };
+      try {
+        firebaseDb.ref(FIREBASE_DATA_PATH).update(Object.assign({}, updates, { updatedAt: Date.now() })).then(() => {
+          // Server ne confirm kar diya: pending list se hatao (agar beech me isi path par naya change nahi aaya).
+          keys.forEach(k => { if (JSON.stringify(pendingWrites[k]) === sentSig[k]) delete pendingWrites[k]; });
+          persistPending();
+        }).catch(fail);
+      } catch (error) { fail(error); }   // jaise galat key (roll me '.' etc.) par Firebase turant error fenkta hai
+    }
+
+    // Sirf 'students' aur 'logs/<date>/<roll>' track hote hain (poora 'logs' object kabhi replay nahi hota, warna purana data naye ko overwrite kar deta).
+    function isTrackedKey(key) { return key === 'students' || /^logs\/[^/]+\/[^/]+$/.test(key); }
+
+    // trackKeys: sirf in keys ko "pending" me rakhte hain (default: sab). Auto-fill wali default entries track nahi hoti,
+    // taaki baad me dusre device ka asli data overwrite na ho.
+    function writeRemote(updates, trackKeys) {
+      const toTrack = trackKeys || Object.keys(updates);
+      toTrack.forEach(k => {
+        if (k in updates && isTrackedKey(k)) pendingWrites[k] = updates[k] === undefined ? null : updates[k];
+      });
+      persistPending();
+      sendRemote(updates);
+    }
+
+    function applyUpdatesToState(updates) {
+      Object.keys(updates).forEach((key) => {
+        const value = updates[key];
+        if (key === 'students') {
+          const list = normalizeStudents(value);
+          if (list.length) students = list;
+          return;
+        }
+        const m = /^logs\/([^/]+)\/([^/]+)$/.exec(key);
+        if (!m) return;
+        const date = m[1], roll = m[2];
+        if (value === null) {
+          if (allLogs[date]) {
+            delete allLogs[date][roll];
+            if (!Object.keys(allLogs[date]).length) delete allLogs[date];
+          }
+        } else {
+          if (!allLogs[date]) allLogs[date] = {};
+          allLogs[date][roll] = value;
+        }
+      });
+    }
+
+    // Jo changes Firebase tak confirm nahi hue (pichhli baar ke ya SDK load hone se pehle ke): remote data ke upar dobara lagao aur bhejo.
+    function replayPending() {
+      needReplay = false;
+      const keys = Object.keys(pendingWrites).filter(isTrackedKey);
+      if (!keys.length) return;
+      const updates = {};
+      keys.forEach(k => { updates[k] = pendingWrites[k]; });
+      applyUpdatesToState(updates);
+      persistLocal();
+      refreshUIFromState();
+      sendRemote(updates);
+    }
+
+    function saveStudents() {
+      persistLocal();
+      writeRemote({ students: students });
+    }
+
+    // ===================== LIBRARIES (app start hone ke BAAD load) + FIREBASE =====================
+    const FIREBASE_APP_URL = 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js';
+    const FIREBASE_DB_URL = 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js';
+    const JSPDF_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    const RETRY_DELAYS = [2000, 5000, 10000, 20000];
+
+    function loadScript(url) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = url;
+        s.async = true;
+        s.onload = () => resolve();
+        s.onerror = () => { if (s.parentNode) s.parentNode.removeChild(s); reject(new Error('Load nahi hua: ' + url)); };
+        document.head.appendChild(s);
+      });
+    }
+
+    // Network fail hone par kuch der baad dobara koshish (slow / unstable internet ke liye).
+    async function loadScriptRetry(url) {
+      let lastError;
+      for (let i = 0; i <= RETRY_DELAYS.length; i++) {
+        try { await loadScript(url); return; }
+        catch (error) {
+          lastError = error;
+          if (i < RETRY_DELAYS.length) await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[i]));
+        }
+      }
+      throw lastError;
+    }
+
+    let firebaseLibPromise = null;
+    function ensureFirebaseLib() {
+      if (typeof firebase !== 'undefined' && firebase.database) return Promise.resolve();
+      if (!firebaseLibPromise) {
+        firebaseLibPromise = (async () => {
+          if (typeof firebase === 'undefined') await loadScriptRetry(FIREBASE_APP_URL);
+          if (!firebase.database) await loadScriptRetry(FIREBASE_DB_URL);
+        })().catch((error) => { firebaseLibPromise = null; throw error; });
+      }
+      return firebaseLibPromise;
+    }
+
+    let pdfLibPromise = null;
+    function ensurePdfLib() {
+      if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve();
+      if (!pdfLibPromise) {
+        pdfLibPromise = loadScriptRetry(JSPDF_URL).catch((error) => { pdfLibPromise = null; throw error; });
+      }
+      return pdfLibPromise;
+    }
+
+    function firebaseErrorMessage(error, action) {
+      const code = error && (error.code || error.message || '');
+      if (/permission/i.test(String(code))) {
+        return 'Firebase ne access deny kiya - Firebase Console me Realtime Database Rules (ya unki expiry date) check karein.';
+      }
+      return action === 'save' ? 'Firebase save nahi hua - data phone me safe hai, net aane par sync hoga.'
+                               : 'Firebase se data nahi aa raha - internet check karein.';
+    }
+
+    function setSyncState(state) {
+      syncState = state;
+      const dot = document.getElementById('syncDot');
+      if (dot) dot.setAttribute('data-state', state);
+    }
+
+    function showSyncStatus() {
+      const pending = Object.keys(pendingWrites).length;
+      const base = {
+        connecting: 'Firebase: connect ho raha hai...',
+        online: 'Firebase: connected - data sync ho raha hai',
+        offline: 'Firebase: offline - data phone me save hai, net aane par sync hoga'
+      }[syncState];
+      showToast(base + (pending && syncState !== 'online' ? ` (${pending} changes baaki)` : ''));
+    }
+
+    // .info/connected: Firebase ka apna "internet + server se connection" signal.
+    function onConnectionChange(snapshot) {
+      const online = snapshot.val() === true;
+      const wasOnline = syncState === 'online';
+      setSyncState(online ? 'online' : 'offline');
+      if (online) {
+        if (everOnline && !wasOnline) showToast('Wapas online - sync ho raha hai');
+        everOnline = true;
+      } else if (everOnline && wasOnline) {
+        showToast('Offline ho gaye - changes phone me save ho rahe hain, net aate hi sync honge');
+      }
+    }
+
+    // Firebase ke bina (offline mode) hum local data hi "final" maanke chalte hain - baaki students ki default entries bhi bhar dete hain.
+    function enterLocalMode() {
+      firebaseGaveUp = true;
+      setSyncState('offline');
+      if (fillPending || dirtyRolls.size) { fillPending = false; scheduleFlush(); }
+    }
+
+    async function startFirebaseSync() {
+      if (firebaseDb || firebaseStarting) return;
+      if (navigator.onLine === false) { enterLocalMode(); return; }   // net bilkul nahi: retry me time waste nahi, 'online' event par dobara try hoga
+      firebaseStarting = true;
+      firebaseGaveUp = false;
+      setSyncState('connecting');
+      setTimeout(() => { if (!firebaseSynced && !firebaseGaveUp) showToast('Internet slow hai - Firebase connect ho raha hai, tab tak data phone me save hoga'); }, 12000);
+      try {
+        await ensureFirebaseLib();
+        if (firebase.apps && firebase.apps.length) firebase.app(); else firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        firebaseDb = db;
+        db.ref('.info/connected').on('value', onConnectionChange);
+        db.ref(FIREBASE_DATA_PATH).on('value', onRemoteSnapshot, (error) => {
+          console.error('Firebase read failed:', error);
+          enterLocalMode();   // remote data nahi mil raha: local mode jaisa hi chalao
+          showToast(firebaseErrorMessage(error, 'read'));
+        });
+      } catch (error) {
+        firebaseDb = null;
+        enterLocalMode();
+        console.error('Firebase initialization failed:', error);
+        showToast('Firebase connect nahi hua - offline mode (data phone me save hoga)');
+      } finally {
+        firebaseStarting = false;
+      }
+      ensurePdfLib().catch(() => { /* PDF dabate waqt dobara koshish hogi */ });
+    }
+
+    function onRemoteSnapshot(snapshot) {
+      const remote = snapshot.val();
+      const remoteStudents = remote ? normalizeStudents(remote.students) : [];
+      firebaseSynced = true;
+      if (remoteStudents.length) {
+        students = remoteStudents;
+        allLogs = normalizeLogs(remote.logs);
+        persistLocal();
+        refreshUIFromState();
+      } else {
+        // Database khali (ya sirf logs hain): apni student list pehli baar upload karo.
+        if (remote && remote.logs) allLogs = normalizeLogs(remote.logs);
+        if (students.length) {
+          writeRemote(remote && remote.logs ? { students: students } : { students: students, logs: allLogs });
+        }
+      }
+      if (needReplay) replayPending();
+      if (!firebaseAnnounced) {
+        firebaseAnnounced = true;
+        showToast('Firebase connected');
+      }
+      if (dirtyRolls.size || fillPending) {
+        fillPending = false;
+        scheduleFlush();
+      }
+    }
+
+    // ===================== DOM STATE HELPERS =====================
+    function getStatusInput(roll, value) {
+      const suffix = value ? `[value="${cssEsc(value)}"]` : ':checked';
+      return document.querySelector(`input[name="stu_${cssEsc(roll)}"]${suffix}`);
+    }
+    function getBunkBox(roll) { return document.querySelector(`input[name="bunk_${cssEsc(roll)}"]`); }
+    function getBunkWrap(roll) { return document.getElementById('bunkWrap_' + roll); }
+    function getCheckedStatus(roll) { const el = getStatusInput(roll); return el ? el.value : null; }
+
+    function getSelectedStatuses() {
+      const selections = {};
+      students.forEach((student) => {
+        const val = getCheckedStatus(student.roll);
+        if (val) selections[student.roll] = val;
+      });
+      return selections;
+    }
+
+    function getBunkSelections() {
+      const selections = {};
+      students.forEach((student) => {
+        const box = getBunkBox(student.roll);
+        if (box) selections[student.roll] = box.checked;
+      });
+      return selections;
+    }
+
+    function snapshotSelections() {
+      return { statuses: getSelectedStatuses(), bunks: getBunkSelections() };
+    }
+
+    function getTodaySelections() {
+      const todayData = allLogs[activeDateKey] || {};
+      const statuses = {};
+      const bunks = {};
+      students.forEach((student) => {
+        const saved = todayData[student.roll];
+        if (saved && ['Present', 'Leave', 'Absent'].includes(saved.status)) {
+          statuses[student.roll] = saved.status;
+          bunks[student.roll] = saved.status === 'Present' && !!saved.bunk;
+        }
+      });
+      return { statuses, bunks };
+    }
+
+    // Jo changes is device par abhi save nahi hue, unko remote data se overwrite nahi hone dete.
+    function overlayDirty(state) {
+      dirtyRolls.forEach((roll) => {
+        const st = getCheckedStatus(roll);
+        if (st) {
+          state.statuses[roll] = st;
+          const box = getBunkBox(roll);
+          state.bunks[roll] = !!(box && box.checked);
+        }
+      });
+      return state;
+    }
+
+    function readEntry(student) {
+      const status = getCheckedStatus(student.roll) || 'Present';
+      const box = getBunkBox(student.roll);
+      return {
+        name: student.name,
+        id: student.id || 'N/A',
+        status: status,
+        bunk: status === 'Present' && !!(box && box.checked)
+      };
+    }
+
+    // List dobara banaye bina (scroll jump ke bina) status/bunk update karo.
+    function updateDomFromState(state) {
+      students.forEach((student) => {
+        const st = state.statuses[student.roll] || 'Present';
+        const radio = getStatusInput(student.roll, st);
+        if (radio && !radio.checked) radio.checked = true;
+        const wrap = getBunkWrap(student.roll);
+        const box = getBunkBox(student.roll);
+        if (wrap) wrap.style.display = st === 'Present' ? 'block' : 'none';
+        if (box) box.checked = st === 'Present' && !!state.bunks[student.roll];
+      });
+      updateCounts();
+    }
+
+    function refreshUIFromState() {
+      const state = overlayDirty(getTodaySelections());
+      if (JSON.stringify(students) !== renderedStudentsSig) {
+        renderStudents(state.statuses, state.bunks);
+      } else {
+        updateDomFromState(state);
+      }
+    }
+
+    // ===================== RENDER =====================
+    function renderStudents(previousSelections, previousBunk) {
+      if (!previousSelections || !previousBunk) {
+        const todayState = getTodaySelections();
+        previousSelections = previousSelections || todayState.statuses;
+        previousBunk = previousBunk || todayState.bunks;
+      }
+      const container = document.getElementById('studentContainer');
+      const scrollTop = container.scrollTop;
+
+      container.innerHTML = students.map((student, index) => {
+        const r = esc(student.roll);
+        const selectedVal = previousSelections[student.roll] || 'Present';
+        const bunkChecked = selectedVal === 'Present' && previousBunk[student.roll];
+        const adminActionsHTML = isAdmin ? `
+          <button class="action-btn" title="Edit" onclick="editStudent(${index})">✏️ Edit</button>
+          <button class="action-btn" style="color:#FF5252;" title="Delete" onclick="deleteStudent(${index})">🗑️</button>
+        ` : '';
+        const radio = (value, label) => `
+            <label>
+              <input type="radio" name="stu_${r}" value="${value}" data-roll="${r}" ${selectedVal === value ? 'checked' : ''} onchange="onStudentChange(this.dataset.roll)">
+              <span class="status-btn">${label}</span>
+            </label>`;
+        return `
+        <div class="student-card" data-name="${esc(student.name.toLowerCase())}" data-roll="${esc(student.roll.toLowerCase())}">
+          <div class="student-info">
+            <div class="name-details">
+              <h3>${esc(student.name)}</h3>
+              <div class="meta-tags">
+                <span class="tag">Roll: ${r}</span>
+                <span class="tag">ID: ${esc(student.id)}</span>
+              </div>
+            </div>
+            <div class="card-actions">
+              <button class="action-btn" title="View History" data-roll="${r}" onclick="viewStudentHistory(this.dataset.roll)">📜 Logs</button>
+              ${adminActionsHTML}
+            </div>
+          </div>
+          <div class="status-group">${radio('Present', '✅ Present')}${radio('Leave', '⚠️ Leave')}${radio('Absent', '❌ Absent')}
+          </div>
+          <div class="bunk-toggle-wrap" id="bunkWrap_${r}" style="display:${selectedVal === 'Present' ? 'block' : 'none'};">
+            <label>
+              <input type="checkbox" name="bunk_${r}" data-roll="${r}" ${bunkChecked ? 'checked' : ''} onchange="onStudentChange(this.dataset.roll)">
+              <span class="bunk-btn">🏃 Class Bunk Kar Raha Hai</span>
+            </label>
+          </div>
+        </div>`;
+      }).join('');
+
+      container.scrollTop = scrollTop;
+      renderedStudentsSig = JSON.stringify(students);
+      updateCounts();
+      filterStudents();
+    }
+
+    function updateCounts() {
+      let pCount = 0, lCount = 0, aCount = 0, bCount = 0;
+      students.forEach((student) => {
+        const val = getCheckedStatus(student.roll);
+        if (val === 'Present') pCount++;
+        else if (val === 'Leave') lCount++;
+        else if (val === 'Absent') aCount++;
+        const box = getBunkBox(student.roll);
+        if (box && box.checked) bCount++;
+      });
+      document.getElementById('count-present').innerText = pCount;
+      document.getElementById('count-leave').innerText = lCount;
+      document.getElementById('count-absent').innerText = aCount;
+      document.getElementById('count-bunk').innerText = bCount;
+    }
+
+    function filterStudents() {
+      const query = document.getElementById('searchInput').value.toLowerCase().trim();
+      document.querySelectorAll('.student-card').forEach(card => {
+        const name = card.getAttribute('data-name') || '';
+        const roll = card.getAttribute('data-roll') || '';
+        card.style.display = (name.includes(query) || roll.includes(query)) ? 'block' : 'none';
+      });
+    }
+
+    // ===================== ATTENDANCE EDIT + AUTO SAVE =====================
+    function onStudentChange(roll) {
+      const val = getCheckedStatus(roll);
+      const wrap = getBunkWrap(roll);
+      const box = getBunkBox(roll);
+      if (wrap) {
+        if (val === 'Present') {
+          wrap.style.display = 'block';
+        } else {
+          wrap.style.display = 'none';
+          if (box) box.checked = false;
+        }
+      }
+      dirtyRolls.add(roll);
+      updateCounts();
+      scheduleFlush();
+    }
+
+    function markAllStatus(status) {
+      students.forEach(student => {
+        const radio = getStatusInput(student.roll, status);
+        if (radio) radio.checked = true;
+        const wrap = getBunkWrap(student.roll);
+        const box = getBunkBox(student.roll);
+        if (wrap) wrap.style.display = status === 'Present' ? 'block' : 'none';
+        if (box && status !== 'Present') box.checked = false;
+        dirtyRolls.add(student.roll);
+      });
+      updateCounts();
+      scheduleFlush();
+      showToast(`All Marked as ${status}!`);
+    }
+
+    function scheduleFlush() {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = setTimeout(flushAttendance, 400);
+    }
+
+    // Sirf badle hue students (aur aaj ke din ke jinka record nahi bana) likhte hain.
+    function flushAttendance() {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = null;
+      if (!students.length) { dirtyRolls.clear(); return; }
+      const dateKey = activeDateKey;
+      const dayLog = allLogs[dateKey] || {};
+      // Jab tak Firebase ka pehla data nahi aaya (SDK abhi load ho raha ho ya slow net), sirf wahi students likhte hain jinhe user ne chhua.
+      // Baaki default "Present" entries baad me bharenge, warna dusre device ka asli data overwrite ho jata.
+      const synced = firebaseSynced || firebaseGaveUp;
+      if (!synced) fillPending = true;
+      const touched = new Set(dirtyRolls);
+      const entries = {};
+      students.forEach((student) => {
+        if (touched.has(student.roll) || (synced && !dayLog[student.roll])) {
+          entries[student.roll] = readEntry(student);
+        }
+      });
+      dirtyRolls.clear();
+      const rolls = Object.keys(entries);
+      if (!rolls.length) return;
+      allLogs[dateKey] = Object.assign({}, dayLog, entries);
+      persistLocal();
+      const updates = {};
+      const tracked = [];   // sirf user ke asli changes "pending" me jate hain
+      rolls.forEach(roll => {
+        const key = `logs/${dateKey}/${roll}`;
+        updates[key] = entries[roll];
+        if (touched.has(roll)) tracked.push(key);
+      });
+      writeRemote(updates, tracked);
+    }
+
+    // Raat ke 12 ke baad tab khula rehne par naye din ki fresh attendance.
+    function checkDayRollover() {
+      const today = getLocalDateString();
+      if (today === activeDateKey) return;
+      if (autoSaveTimer || dirtyRolls.size) flushAttendance();   // pehle purane din ka pending save
+      activeDateKey = today;
+      dirtyRolls.clear();
+      renderStudents();
+      showToast('Naya din - attendance reset ho gayi');
+    }
+
+    // ===================== ADMIN =====================
+    function toggleAdminPanel() {
+      const loginForm = document.getElementById('loginForm');
+      const managePanel = document.getElementById('managePanel');
+
+      if (isAdmin) {
+        managePanel.style.display = (managePanel.style.display === 'block') ? 'none' : 'block';
+      } else {
+        managePanel.style.display = 'none';
+        loginForm.style.display = (loginForm.style.display === 'block') ? 'none' : 'block';
+      }
+    }
+
+    function handleLogin() {
+      const id = document.getElementById('adminId').value.trim();
+      const pass = document.getElementById('adminPass').value.trim();
+
+      if (id === '123' && pass === '123') {
+        isAdmin = true;
+        document.getElementById('loginForm').style.display = 'none';
+        document.getElementById('managePanel').style.display = 'block';
+        document.getElementById('adminToggleBtn').innerText = '⚙️ Admin Panel';
+        showToast('Admin Login Successful!');
+        const keep = snapshotSelections();
+        renderStudents(keep.statuses, keep.bunks);
+      } else {
+        alert('Galat ID ya Password!');
+      }
+
+      document.getElementById('adminId').value = '';
+      document.getElementById('adminPass').value = '';
+    }
+
+    function handleLogout() {
+      isAdmin = false;
+      document.getElementById('managePanel').style.display = 'none';
+      document.getElementById('adminToggleBtn').innerText = '🔒 Admin Login';
+      showToast('Logged Out!');
+      const keep = snapshotSelections();
+      renderStudents(keep.statuses, keep.bunks);
+    }
+
+    function rollTaken(roll, ignoreIndex) {
+      const key = normRollKey(roll);
+      return students.some((s, i) => i !== ignoreIndex && normRollKey(s.roll) === key);
+    }
+
+    function validateStudentInput(roll, name, ignoreIndex) {
+      if (!name || !roll) { alert('Name aur Roll number zaroori hai!'); return false; }
+      if (!ROLL_PATTERN.test(roll)) {
+        alert('Roll number me sirf letters, numbers, - ya _ chalega (max 10 characters, space nahi).');
+        return false;
+      }
+      if (rollTaken(roll, ignoreIndex)) {
+        alert(`Roll ${roll} kisi aur student ke paas pehle se hai!`);
+        return false;
+      }
+      return true;
+    }
+
+    function sortStudents() { students.sort((a, b) => compareRoll(a.roll, b.roll)); }
+
+    function addNewStudent() {
+      if (!isAdmin) return;
+      const roll = document.getElementById('newRoll').value.trim();
+      const id = document.getElementById('newId').value.trim();
+      const name = document.getElementById('newName').value.trim();
+      if (!validateStudentInput(roll, name, -1)) return;
+
+      const keep = snapshotSelections();
+      students.push({ roll: roll, id: id || 'N/A', name: name });
+      sortStudents();
+      saveStudents();
+      renderStudents(keep.statuses, keep.bunks);
+
+      document.getElementById('newRoll').value = '';
+      document.getElementById('newId').value = '';
+      document.getElementById('newName').value = '';
+      showToast('Student Added!');
+    }
+
+    function editStudent(index) {
+      if (!isAdmin) return;
+      const student = students[index];
+      if (!student) return;
+      document.getElementById('editIndex').value = index;
+      document.getElementById('editRoll').value = student.roll;
+      document.getElementById('editId').value = student.id;
+      document.getElementById('editName').value = student.name;
+      document.getElementById('editModal').style.display = 'flex';
+    }
+
+    function saveEditedStudent() {
+      if (!isAdmin) return;
+      const index = parseInt(document.getElementById('editIndex').value, 10);
+      const old = students[index];
+      if (!old) { closeModal('editModal'); return; }
+      const newRoll = document.getElementById('editRoll').value.trim();
+      const newId = document.getElementById('editId').value.trim() || 'N/A';
+      const newName = document.getElementById('editName').value.trim();
+      if (!validateStudentInput(newRoll, newName, index)) return;
+
+      const keep = snapshotSelections();
+      const updates = {};
+
+      // History us student ke saath rehni chahiye: roll badle to purane records naye roll par le jao, naam/ID sab jagah update.
+      Object.keys(allLogs).forEach(date => {
+        const day = allLogs[date];
+        const entry = day[old.roll];
+        if (!entry) return;
+        const updated = Object.assign({}, entry, { name: newName, id: newId });
+        if (newRoll !== old.roll) {
+          delete day[old.roll];
+          updates[`logs/${date}/${old.roll}`] = null;
+        }
+        day[newRoll] = updated;
+        updates[`logs/${date}/${newRoll}`] = updated;
+      });
+
+      if (newRoll !== old.roll) {
+        if (keep.statuses[old.roll]) { keep.statuses[newRoll] = keep.statuses[old.roll]; delete keep.statuses[old.roll]; }
+        if (old.roll in keep.bunks) { keep.bunks[newRoll] = keep.bunks[old.roll]; delete keep.bunks[old.roll]; }
+        if (dirtyRolls.delete(old.roll)) dirtyRolls.add(newRoll);
+      }
+
+      students[index] = { roll: newRoll, id: newId, name: newName };
+      sortStudents();
+      updates.students = students;
+      persistLocal();
+      writeRemote(updates);
+      closeModal('editModal');
+      renderStudents(keep.statuses, keep.bunks);
+      showToast('Student Details Updated!');
+    }
+
+    function deleteStudent(index) {
+      if (!isAdmin) return;
+      const student = students[index];
+      if (!student) return;
+      if (confirm(`Kya aap "${student.name}" ko delete karna chahte hain?`)) {
+        const keep = snapshotSelections();
+        students.splice(index, 1);
+        dirtyRolls.delete(student.roll);
+        saveStudents();
+        renderStudents(keep.statuses, keep.bunks);
+        showToast('Student Removed!');
+      }
+    }
+
+    // ===================== PAST LOGS =====================
+    function openOldAttendanceModal() {
+      const dateSelect = document.getElementById('oldDateSelect');
+      dateSelect.innerHTML = '<option value="">-- Choose Date --</option>';
+      const dates = Object.keys(allLogs).sort().reverse();
+      if (dates.length === 0) {
+        dateSelect.innerHTML = '<option value="">No history saved yet</option>';
+      } else {
+        dates.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.innerText = d;
+          dateSelect.appendChild(opt);
+        });
+      }
+      selectedPastDate = '';
+      document.getElementById('pastReportContainer').innerHTML = '<p style="color: var(--sub-text); text-align: center;">Kripya koi date select karein.</p>';
+      document.getElementById('btnCopyOld').style.display = 'none';
+      document.getElementById('btnPdfOld').style.display = 'none';
+      document.getElementById('btnSaveBunk').style.display = 'none';
+      document.getElementById('bunkEditHint').style.display = 'none';
+      document.getElementById('oldAttendanceModal').style.display = 'flex';
+    }
+
+    function renderPastAttendanceReport() {
+      const date = document.getElementById('oldDateSelect').value;
+      const container = document.getElementById('pastReportContainer');
+      const btnCopy = document.getElementById('btnCopyOld');
+      const btnPdf = document.getElementById('btnPdfOld');
+      const btnSaveBunk = document.getElementById('btnSaveBunk');
+      const bunkEditHint = document.getElementById('bunkEditHint');
+      const day = date ? allLogs[date] : null;
+
+      if (!day) {
+        container.innerHTML = '<p style="color: var(--sub-text); text-align: center;">Kripya koi date select karein.</p>';
+        btnCopy.style.display = 'none';
+        btnPdf.style.display = 'none';
+        btnSaveBunk.style.display = 'none';
+        bunkEditHint.style.display = 'none';
+        selectedPastDate = '';
+        return;
+      }
+
+      selectedPastDate = date;
+      let pCount = 0, lCount = 0, aCount = 0, bCount = 0;
+      let listHTML = '';
+
+      sortedRolls(day).forEach(roll => {
+        const item = day[roll];
+        const status = normStatus(item.status);
+        let badge = '✅ Present';
+        if (status === 'Leave') { badge = '⚠️ Leave'; lCount++; }
+        else if (status === 'Absent') { badge = '❌ Absent'; aCount++; }
+        else { pCount++; }
+        const isBunk = status === 'Present' && !!item.bunk;
+        if (isBunk) bCount++;
+
+        let bunkControl = '';
+        if (status === 'Present') {
+          bunkControl = `<label style="display:flex; align-items:center; gap:4px; cursor:pointer; margin-left:6px;">
+            <input type="checkbox" data-roll="${esc(roll)}" class="bunkEditCheckbox" ${isBunk ? 'checked' : ''} style="accent-color:#9C27B0;">
+            <span style="font-size:11px; font-weight:800; color:#9C27B0;">🏃 Bunk</span>
+          </label>`;
+        }
+
+        listHTML += `<div style="display:flex; justify-content: space-between; align-items:center; border-bottom:1px solid #E2E8D5; padding:6px 0;">
+          <span><strong>Roll ${esc(roll)}:</strong> ${esc(item.name)}</span>
+          <div style="display:flex; align-items:center;">
+            <span style="${isBunk ? 'color:#9C27B0; font-weight:800;' : ''}">${badge}</span>
+            ${bunkControl}
+          </div>
+        </div>`;
+      });
+
+      const total = pCount + lCount + aCount;
+      container.innerHTML = `
+        <div style="background:#E2F0B3; padding:8px; border-radius:8px; margin-bottom:8px; font-weight:800; text-align:center; color:#192014;">
+          ✅ ${pCount} | ⚠️ ${lCount} | ❌ ${aCount} | 🏃 Bunk: ${bCount} (Total: ${total})
+        </div>
+        ${listHTML}
+      `;
+      btnCopy.style.display = 'block';
+      btnPdf.style.display = 'block';
+      btnSaveBunk.style.display = pCount > 0 ? 'block' : 'none';
+      bunkEditHint.style.display = pCount > 0 ? 'block' : 'none';
+    }
+
+    function saveBunkUpdates() {
+      const day = selectedPastDate ? allLogs[selectedPastDate] : null;
+      if (!day) return;
+      const updates = {};
+      document.querySelectorAll('.bunkEditCheckbox').forEach(cb => {
+        const roll = cb.getAttribute('data-roll');
+        const entry = day[roll];
+        if (entry && normStatus(entry.status) === 'Present' && !!entry.bunk !== cb.checked) {
+          entry.bunk = cb.checked;
+          updates[`logs/${selectedPastDate}/${roll}`] = entry;
+        }
+      });
+      if (!Object.keys(updates).length) { showToast('Koi change nahi hua'); return; }
+      persistLocal();
+      writeRemote(updates);
+      if (selectedPastDate === activeDateKey) updateDomFromState(overlayDirty(getTodaySelections()));
+      showToast(`🏃 Bunk status updated for ${selectedPastDate}!`);
+      renderPastAttendanceReport();
+    }
+
+    function pastRows(day) {
+      return sortedRolls(day).map(roll => {
+        const item = day[roll];
+        const status = normStatus(item.status);
+        return { roll: roll, id: item.id || 'N/A', name: item.name || '', status: status, bunk: status === 'Present' && !!item.bunk };
+      });
+    }
+
+    function viewStudentHistory(rollNo) {
+      const student = students.find(s => s.roll === rollNo);
+      if (!student) return;
+      document.getElementById('historyStudentTitle').innerText = `📜 History: ${student.name} (Roll: ${student.roll})`;
+      const logsContainer = document.getElementById('historyLogs');
+      let historyHTML = '';
+      let presentCount = 0, absentCount = 0, leaveCount = 0, bunkCount = 0;
+      const dates = Object.keys(allLogs).sort().reverse();
+      if (dates.length === 0) {
+        historyHTML = '<p style="color: var(--sub-text);">Abhi tak koi daily history save nahi hui hai.</p>';
+      } else {
+        dates.forEach(date => {
+          const dayData = allLogs[date] && allLogs[date][rollNo];
+          if (dayData) {
+            const status = normStatus(dayData.status);
+            let statusBadge = '✅ Present';
+            if (status === 'Leave') { statusBadge = '⚠️ Leave'; leaveCount++; }
+            else if (status === 'Absent') { statusBadge = '❌ Absent'; absentCount++; }
+            else { presentCount++; }
+            const isBunk = status === 'Present' && !!dayData.bunk;
+            if (isBunk) { statusBadge += ' 🏃 Bunk'; bunkCount++; }
+            historyHTML += `<div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 6px; border-bottom: 1px solid #E2E8D5; padding-bottom: 4px;">
+              <span><strong>${esc(date)}:</strong></span>
+              <span style="${isBunk ? 'color:#9C27B0; font-weight:800;' : ''}">${statusBadge}</span>
+            </div>`;
+          }
+        });
+        historyHTML = `<div style="background:#F0F6E8; padding:8px 12px; border-radius:10px; margin-bottom:12px; font-weight:700;">
+          Total Stats: ✅ ${presentCount} | ❌ ${absentCount} | ⚠️ ${leaveCount} | 🏃 Bunk: ${bunkCount}
+        </div>` + (historyHTML || '<p style="color: var(--sub-text);">Iss student ka record nahi mila.</p>');
+      }
+      logsContainer.innerHTML = historyHTML;
+      document.getElementById('historyModal').style.display = 'flex';
+    }
+
+    function closeModal(modalId) {
+      document.getElementById(modalId).style.display = 'none';
+    }
+
+    function handleOverlayClick(e, modalId) {
+      if (e.target.id === modalId) {
+        closeModal(modalId);
+      }
+    }
+
+    // ===================== PDF =====================
+    const PDF_C = {
+      dark: [25, 32, 20], lime: [125, 220, 49], limeSoft: [226, 240, 179],
+      text: [25, 32, 20], sub: [106, 122, 94], rule: [211, 229, 170],
+      zebra: [246, 250, 236], track: [226, 232, 213], heart: [229, 57, 53], white: [255, 255, 255]
+    };
+    const PDF_STATUS = {
+      Present: { card: [67, 160, 71], cardText: [255, 255, 255], pillBg: [221, 241, 223], pillText: [27, 94, 32], label: 'PRESENT' },
+      Leave:   { card: [255, 193, 7], cardText: [25, 32, 20],    pillBg: [255, 238, 190], pillText: [125, 74, 0], label: 'LEAVE' },
+      Absent:  { card: [229, 57, 53], cardText: [255, 255, 255], pillBg: [255, 222, 222], pillText: [183, 28, 28], label: 'ABSENT' },
+      Bunk:    { card: [142, 36, 170], cardText: [255, 255, 255], pillBg: [243, 224, 248], pillText: [123, 31, 162], label: 'BUNK' }
+    };
+
+    // PDF ka default font sirf Latin letters dikha sakta hai; baaki characters ki jagah '?' (warna garbage text aata hai).
+    function pdfSafe(text) {
+      return String(text == null ? '' : text)
+        .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^\x20-\x7E]+/g, '?')
+        .trim();
+    }
+
+    function pdfFit(doc, text, maxW) {
+      if (doc.getTextWidth(text) <= maxW) return text;
+      let t = text;
+      while (t.length > 1 && doc.getTextWidth(t + '...') > maxW) t = t.slice(0, -1);
+      return t.replace(/\s+$/, '') + '...';
+    }
+
+    // Emoji PDF font me nahi chalta, isliye heart ko vector shapes se banate hain.
+    function pdfHeart(doc, cx, cy, width, rgb) {
+      const a = width / 1.707;          // rotated square ki side
+      const d = a / Math.SQRT2;         // uska half-diagonal
+      doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+      doc.circle(cx - d / 2, cy - d / 2, a / 2, 'F');
+      doc.circle(cx + d / 2, cy - d / 2, a / 2, 'F');
+      doc.lines([[d, d], [-d, d], [-d, -d]], cx, cy - d, [1, 1], 'F', true);
+    }
+
+    // Live aur Past dono PDF isi ek function se bante hain, isliye hamesha same look.
+    function buildAttendancePDF(rawRows, opts) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const C = PDF_C;
+      const PW = 210, PH = 297, M = 14, CW = PW - 2 * M;
+      const FOOT_Y = PH - 14, LIMIT = PH - 19, ROW_H = 6.2;
+      const when = opts.date || new Date();
+      const generated = new Date();
+      const dateStr = fmtDate(when);
+      const subStr = DAY_NAMES[when.getDay()] + (opts.showTime ? '  ·  ' + fmtTime(generated) : '');
+
+      const rows = rawRows.map(r => {
+        const status = normStatus(r.status);
+        return { roll: pdfSafe(r.roll), id: pdfSafe(r.id) || 'N/A', name: pdfSafe(r.name), status: status, bunk: status === 'Present' && !!r.bunk };
+      });
+      const counts = { Present: 0, Leave: 0, Absent: 0, Bunk: 0 };
+      rows.forEach(r => { counts[r.status]++; if (r.bunk) counts.Bunk++; });
+      const total = rows.length;
+      const pct = total ? (counts.Present / total) * 100 : 0;
+
+      const fill = rgb => doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+      const stroke = rgb => doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
+      const setText = (size, style, rgb) => {
+        doc.setFont('helvetica', style);
+        doc.setFontSize(size);
+        doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+      };
+      const baseline = (mid, size) => mid + size * 0.3528 * 0.36;   // text ko vertically center karne ke liye
+
+      doc.setProperties({
+        title: `Attendance Report - Class ${CLASS_NAME} - ${dateStr}`,
+        subject: 'Daily Attendance Sheet',
+        author: CREDIT_NAME,
+        creator: `Attendance App by ${CREDIT_NAME}`
+      });
+
+      // ---- Header band ----
+      function drawBand(first) {
+        if (first) {
+          fill(C.dark); doc.rect(0, 0, PW, 38, 'F');
+          fill(C.lime); doc.rect(0, 38, PW, 1.2, 'F');
+          const chip = `CLASS ${CLASS_NAME}`;
+          setText(8, 'bold', C.dark);
+          const chipW = doc.getTextWidth(chip) + 8;
+          fill(C.lime); doc.roundedRect(M, 8, chipW, 6, 3, 3, 'F');
+          setText(8, 'bold', C.dark); doc.text(chip, M + chipW / 2, baseline(11, 8), { align: 'center' });
+          setText(22, 'bold', C.lime); doc.text('ATTENDANCE REPORT', M, 25);
+          setText(9.5, 'normal', C.limeSoft); doc.text('Daily Attendance Sheet', M, 32);
+          setText(15, 'bold', C.white); doc.text(dateStr, PW - M, 21, { align: 'right' });
+          setText(9.5, 'normal', C.limeSoft); doc.text(subStr, PW - M, 28, { align: 'right' });
+          return 39.2;
+        }
+        fill(C.dark); doc.rect(0, 0, PW, 15, 'F');
+        fill(C.lime); doc.rect(0, 15, PW, 0.8, 'F');
+        setText(12, 'bold', C.lime); doc.text('ATTENDANCE REPORT', M, 10);
+        setText(9, 'normal', C.limeSoft); doc.text(`Class ${CLASS_NAME}  ·  ${dateStr}`, PW - M, 10, { align: 'right' });
+        return 15.8;
+      }
+
+      // ---- Summary cards ----
+      function drawCards(y) {
+        const items = [
+          { label: 'TOTAL', value: total, bg: C.dark, num: C.lime, lab: C.limeSoft },
+          { label: 'PRESENT', value: counts.Present, bg: PDF_STATUS.Present.card, num: PDF_STATUS.Present.cardText, lab: PDF_STATUS.Present.cardText },
+          { label: 'LEAVE', value: counts.Leave, bg: PDF_STATUS.Leave.card, num: PDF_STATUS.Leave.cardText, lab: PDF_STATUS.Leave.cardText },
+          { label: 'ABSENT', value: counts.Absent, bg: PDF_STATUS.Absent.card, num: PDF_STATUS.Absent.cardText, lab: PDF_STATUS.Absent.cardText },
+          { label: 'BUNK', value: counts.Bunk, bg: PDF_STATUS.Bunk.card, num: PDF_STATUS.Bunk.cardText, lab: PDF_STATUS.Bunk.cardText }
+        ];
+        const gap = 4, w = (CW - gap * 4) / 5, h = 19;
+        items.forEach((it, i) => {
+          const x = M + i * (w + gap);
+          fill(it.bg); doc.roundedRect(x, y, w, h, 3, 3, 'F');
+          setText(19, 'bold', it.num); doc.text(String(it.value), x + w / 2, y + 10.6, { align: 'center' });
+          setText(7, 'bold', it.lab); doc.text(it.label, x + w / 2, y + 15.8, { align: 'center' });
+        });
+        return y + h;
+      }
+
+      // ---- Attendance rate bar ----
+      function drawRate(y) {
+        setText(8.5, 'bold', C.text); doc.text('Attendance Rate', M, y);
+        setText(8.5, 'bold', PDF_STATUS.Present.pillText); doc.text(`${pct.toFixed(1)}% Present`, PW - M, y, { align: 'right' });
+        const by = y + 2.4, bh = 3.4;
+        fill(C.track); doc.rect(M, by, CW, bh, 'F');
+        if (total) {
+          let x = M;
+          ['Present', 'Leave', 'Absent'].forEach(k => {
+            const w = CW * counts[k] / total;
+            if (w > 0) { fill(PDF_STATUS[k].card); doc.rect(x, by, w, bh, 'F'); }
+            x += w;
+          });
+        }
+        setText(7, 'normal', C.sub);
+        doc.text('Note: Bunk students are included in the Present count.', M, by + bh + 4.2);
+        return by + bh + 4.2;
+      }
+
+      // ---- Table ----
+      const COL = { roll: M + 5, id: M + 20, name: M + 51, status: M + 137, bunk: M + 168 };
+
+      function drawTableHeader(y) {
+        fill(C.dark); doc.roundedRect(M, y, CW, 7.4, 1.5, 1.5, 'F');
+        setText(7.5, 'bold', C.lime);
+        const b = baseline(y + 3.7, 7.5);
+        doc.text('ROLL', COL.roll, b);
+        doc.text('STUDENT ID', COL.id, b);
+        doc.text('NAME', COL.name, b);
+        doc.text('STATUS', COL.status, b, { align: 'center' });
+        doc.text('BUNK', COL.bunk, b, { align: 'center' });
+        return y + 7.4;
+      }
+
+      function drawPill(label, cx, mid, w, st) {
+        fill(st.pillBg); doc.roundedRect(cx - w / 2, mid - 2.2, w, 4.4, 2.2, 2.2, 'F');
+        setText(6.8, 'bold', st.pillText); doc.text(label, cx, baseline(mid, 6.8), { align: 'center' });
+      }
+
+      function drawRow(r, i, y) {
+        const st = PDF_STATUS[r.status];
+        const mid = y + ROW_H / 2;
+        if (i % 2 === 0) { fill(C.zebra); doc.rect(M, y, CW, ROW_H, 'F'); }
+        fill(st.card); doc.rect(M, y, 1.6, ROW_H, 'F');
+        setText(9, 'bold', C.text); doc.text(r.roll, COL.roll, baseline(mid, 9));
+        setText(8.5, 'normal', C.sub); doc.text(r.id, COL.id, baseline(mid, 8.5));
+        setText(9, 'bold', C.text); doc.text(pdfFit(doc, r.name, 66), COL.name, baseline(mid, 9));
+        drawPill(st.label, COL.status, mid, 26, st);
+        if (r.bunk) {
+          drawPill('BUNK', COL.bunk, mid, 22, PDF_STATUS.Bunk);
+        } else {
+          setText(9, 'normal', [170, 180, 160]); doc.text('-', COL.bunk, baseline(mid, 9), { align: 'center' });
+        }
+      }
+
+      // ---- Build pages ----
+      let y = drawBand(true) + 7;
+      y = drawCards(y) + 8;
+      y = drawRate(y) + 4;
+      y = drawTableHeader(y);
+
+      rows.forEach((r, i) => {
+        if (y + ROW_H > LIMIT) {
+          doc.addPage();
+          y = drawBand(false) + 6;
+          y = drawTableHeader(y);
+        }
+        drawRow(r, i, y);
+        y += ROW_H;
+      });
+      stroke(C.rule); doc.setLineWidth(0.3); doc.line(M, y, M + CW, y);
+
+      // ---- Quick summary: Absent / Leave / Bunk names ----
+      const groups = [
+        { key: 'Absent', title: 'ABSENT', list: rows.filter(r => r.status === 'Absent'), bg: [255, 244, 244] },
+        { key: 'Leave', title: 'LEAVE', list: rows.filter(r => r.status === 'Leave'), bg: [255, 249, 232] },
+        { key: 'Bunk', title: 'BUNK', list: rows.filter(r => r.bunk), bg: [250, 242, 252] }
+      ].filter(g => g.list.length);
+
+      if (groups.length) {
+        y += 9;
+        if (y + 8 + 20 > LIMIT) { doc.addPage(); y = drawBand(false) + 8; }
+        setText(10, 'bold', C.text); doc.text('QUICK SUMMARY', M, y);
+        y += 4;
+        groups.forEach(g => {
+          const st = PDF_STATUS[g.key];
+          setText(8.5, 'normal', C.text);
+          // Line-wrap student by student, taaki "08." aur uska naam alag lines me na toote.
+          const lines = [];
+          let cur = '';
+          g.list.forEach((r, i) => {
+            const piece = pdfFit(doc, `${r.roll}. ${r.name}` + (i < g.list.length - 1 ? ',' : ''), CW - 10);
+            const trial = cur ? cur + '   ' + piece : piece;
+            if (cur && doc.getTextWidth(trial) > CW - 10) { lines.push(cur); cur = piece; } else { cur = trial; }
+          });
+          if (cur) lines.push(cur);
+          const bh = 9 + lines.length * 4.3;
+          if (y + bh > LIMIT) { doc.addPage(); y = drawBand(false) + 8; }
+          fill(g.bg); doc.rect(M, y, CW, bh, 'F');
+          fill(st.card); doc.rect(M, y, 1.8, bh, 'F');
+          setText(8.5, 'bold', st.pillText); doc.text(`${g.title}  (${g.list.length})`, M + 5, y + 5.6);
+          setText(8.5, 'normal', C.text);
+          lines.forEach((line, li) => doc.text(line, M + 5, y + 10.4 + li * 4.3));
+          y += bh + 3;
+        });
+      }
+
+      // ---- Footer on every page: generated time | Made with <3 by Shoebu | page no. ----
+      const pages = doc.internal.getNumberOfPages();
+      for (let p = 1; p <= pages; p++) {
+        doc.setPage(p);
+        stroke(C.rule); doc.setLineWidth(0.3); doc.line(M, FOOT_Y, PW - M, FOOT_Y);
+        const by = FOOT_Y + 6.2;
+        setText(7.5, 'normal', C.sub);
+        doc.text(`Generated: ${fmtDate(generated)}, ${fmtTime(generated)}`, M, by);
+        doc.text(`Page ${p} of ${pages}`, PW - M, by, { align: 'right' });
+
+        setText(9, 'normal', C.sub);
+        const wMade = doc.getTextWidth('Made with');
+        const wBy = doc.getTextWidth('by ');
+        setText(9, 'bold', C.text);
+        const wName = doc.getTextWidth(CREDIT_NAME);
+        const heartW = 3.4, gap = 1.3;
+        let x = PW / 2 - (wMade + gap + heartW + gap + wBy + wName) / 2;
+        setText(9, 'normal', C.sub); doc.text('Made with', x, by); x += wMade + gap;
+        pdfHeart(doc, x + heartW / 2, by - 1.25, heartW, C.heart); x += heartW + gap;
+        setText(9, 'normal', C.sub); doc.text('by ', x, by); x += wBy;
+        setText(9, 'bold', C.text); doc.text(CREDIT_NAME, x, by);
+      }
+      return doc;
+    }
+
+    // Mobile par share sheet (WhatsApp etc.), baaki jagah seedha download.
+    async function deliverPDF(doc, filename) {
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile && typeof File === 'function' && navigator.canShare) {
+        try {
+          const file = new File([doc.output('blob')], filename, { type: 'application/pdf' });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: filename });
+            showToast('PDF shared!');
+            return;
+          }
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;   // user ne share sheet band kar diya
+          console.warn('Share failed, downloading instead:', err);
+        }
+      }
+      doc.save(filename);
+      showToast('PDF generated successfully!');
+    }
+
+    function pdfFailed(err) {
+      alert('PDF generation error: ' + (err && err.message ? err.message : err));
+      console.error(err);
+    }
+
+    // PDF library ab app start ke baad background me load hoti hai. Agar abhi tak nahi aayi, to yahin wait karke PDF banate hain.
+    async function withPdfLib(run) {
+      if (!(window.jspdf && window.jspdf.jsPDF)) {
+        showToast('PDF library load ho rahi hai...');
+        try { await ensurePdfLib(); }
+        catch (error) { alert('PDF library load nahi hui. Internet check karke dobara dabayein.'); return; }
+      }
+      try { await run(); } catch (err) { pdfFailed(err); }
+    }
+
+    function collectLiveRows() {
+      return students.map(student => {
+        const entry = readEntry(student);
+        return { roll: student.roll, id: student.id, name: student.name, status: entry.status, bunk: entry.bunk };
+      });
+    }
+
+    function generatePDF() {
+      if (!students.length) { showToast('Koi student nahi hai'); return; }
+      withPdfLib(() => {
+        const doc = buildAttendancePDF(collectLiveRows(), { date: new Date(), showTime: true });
+        return deliverPDF(doc, `Attendance_${CLASS_NAME}_${getLocalDateString()}.pdf`);
+      });
+    }
+
+    function generatePastPDF() {
+      const dateKey = selectedPastDate;
+      if (!dateKey || !allLogs[dateKey]) return;
+      withPdfLib(() => {
+        const day = allLogs[dateKey];
+        if (!day) return;
+        const doc = buildAttendancePDF(pastRows(day), { date: parseDateKey(dateKey), showTime: false });
+        return deliverPDF(doc, `Attendance_${CLASS_NAME}_${dateKey}.pdf`);
+      });
+    }
+
+    // ===================== COPY TEXT =====================
+    function copyText(text, okMessage) {
+      const fallback = () => {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly', '');
+          ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          if (ok) showToast(okMessage); else alert('Copy Error!');
+        } catch (e) { alert('Copy Error!'); }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => showToast(okMessage)).catch(fallback);
+      } else {
+        fallback();
+      }
+    }
+
+    function copyAttendance() {
+      const now = new Date();
+      let pCount = 0, lCount = 0, aCount = 0, bCount = 0;
+      const resultText = [];
+
+      collectLiveRows().forEach((row) => {
+        let line = `${row.roll}. ${row.name} (ID: ${row.id}) ${row.status}`;
+        if (row.status === 'Present') pCount++;
+        else if (row.status === 'Leave') lCount++;
+        else aCount++;
+        if (row.bunk) { bCount++; line += ' 🏃 Bunk'; }
+        resultText.push(line);
+      });
+
+      const reportText = `ATTENDANCE REPORT\nClass: ${CLASS_NAME}\nDate: ${fmtDate(now)}  |  Time: ${fmtTime(now)}\nTotal Students: ${students.length}\nPresent: ${pCount}\nLeave: ${lCount}\nAbsent: ${aCount}\nBunk: ${bCount}\n---------------------------------\n${resultText.join("\n")}\n---------------------------------\nMade with ❤️ by ${CREDIT_NAME}`;
+      copyText(reportText, 'Full Report Copied!');
+    }
+
+    function copyPastAttendance() {
+      const day = selectedPastDate ? allLogs[selectedPastDate] : null;
+      if (!day) return;
+      let pCount = 0, lCount = 0, aCount = 0, bCount = 0;
+      const resultText = [];
+      pastRows(day).forEach(row => {
+        const icon = row.status === 'Leave' ? '⚠️' : (row.status === 'Absent' ? '❌' : '✅');
+        let line = `${row.roll}. ${row.name} (ID: ${row.id}) ${icon} ${row.status}`;
+        if (row.status === 'Present') pCount++;
+        else if (row.status === 'Leave') lCount++;
+        else aCount++;
+        if (row.bunk) { bCount++; line += ' 🏃 Bunk'; }
+        resultText.push(line);
+      });
+      const reportText = `📋 PAST ATTENDANCE REPORT\n🏫 Class: ${CLASS_NAME}\n📅 Date: ${selectedPastDate}\n👥 Total Students: ${resultText.length}\n✅ Present: ${pCount}\n⚠️ Leave: ${lCount}\n❌ Absent: ${aCount}\n🏃 Bunk: ${bCount}\n---------------------------------\n${resultText.join("\n")}\n---------------------------------\nMade with ❤️ by ${CREDIT_NAME}`;
+      copyText(reportText, `Report for ${selectedPastDate} Copied!`);
+    }
+
+    // ===================== TOAST =====================
+    let toastTimer = null;
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+    }
+
+    // ===================== INIT =====================
+    document.getElementById('adminPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { if (autoSaveTimer) flushAttendance(); }
+      else { checkDayRollover(); if (!firebaseDb) startFirebaseSync(); }   // app wapas khulne par Firebase dobara try
+    });
+    window.addEventListener('pagehide', () => { if (autoSaveTimer) flushAttendance(); });
+    window.addEventListener('online', () => { if (!firebaseDb) startFirebaseSync(); });
+    setInterval(checkDayRollover, 30000);
+
+    // Pehla render. Agar kharab data se fail ho to default list se dobara koshish, phir bhi fail ho to screen par error dikhao.
+    function initialRender() {
+      try { renderStudents(); return true; } catch (e1) { console.error('Initial render failed:', e1); }
+      try { students = normalizeStudents(defaultStudents); renderStudents(); return true; } catch (e2) { console.error('Retry with default list failed:', e2); }
+      try { allLogs = {}; renderStudents(); return true; } catch (e3) {
+        console.error('Retry without saved logs failed:', e3);
+        if (window.__showStartupProblem) window.__showStartupProblem('Error: ' + (e3 && e3.message ? e3.message : e3));
+        return false;
+      }
+    }
+    if (initialRender()) window.__appStarted = true;
+    startFirebaseSync();
+  </script>
+</body>
+</html>
